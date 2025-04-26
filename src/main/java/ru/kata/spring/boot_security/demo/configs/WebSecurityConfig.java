@@ -1,48 +1,63 @@
 package ru.kata.spring.boot_security.demo.configs;
 
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configurers.LogoutConfigurer;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.web.filter.HiddenHttpMethodFilter;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import ru.kata.spring.boot_security.demo.CreateDemoUsers;
+import ru.kata.spring.boot_security.demo.services.UserService;
 
-@Configuration
-public class WebSecurityConfig {
+@EnableWebSecurity
+public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
 
+    private final UserService userService;
     private final SuccessUserHandler successUserHandler;
 
-    public WebSecurityConfig(SuccessUserHandler successUserHandler) {
+    public WebSecurityConfig(SuccessUserHandler successUserHandler,
+                             UserService userService) {
         this.successUserHandler = successUserHandler;
+        this.userService = userService;
     }
 
-    @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
         http
-                .authorizeRequests(authorizeRequests -> // Изменено на authorizeRequests
-                        authorizeRequests
-                                .antMatchers("/admin/**").hasRole("ADMIN")
-                                .antMatchers("/user/**").hasAnyRole("USER", "ADMIN")
-                                .antMatchers("/**").permitAll() // permitAll теперь корректно используется
-                                .anyRequest().authenticated()
-                )
-                .formLogin(form -> form
-                        .successHandler(successUserHandler)
-                        .permitAll()
-                )
-                .logout(LogoutConfigurer::permitAll);
-
-        return http.build();
+                .csrf().disable()
+                .authorizeRequests()
+                .antMatchers("/login/**", "/logout").permitAll()
+                .antMatchers("/api/user").hasAnyRole("ADMIN", "USER")
+                .antMatchers("/api/**").hasRole("ADMIN")
+                .anyRequest().authenticated()
+                .and()
+                .formLogin()
+                .loginPage("/login")
+                .usernameParameter("email")
+                .successHandler(successUserHandler)
+                .permitAll()
+                .and()
+                .logout()
+                .permitAll()
+                .logoutSuccessUrl("/login")
+                .and()
+                .exceptionHandling()
+                .accessDeniedHandler((request, response, accessDeniedException) ->
+                        response.sendRedirect("/login"));
     }
 
     @Bean
-    public static BCryptPasswordEncoder passwordEncoder() {
+    public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
     @Bean
-    public HiddenHttpMethodFilter hiddenHttpMethodFilter() {
-        return new HiddenHttpMethodFilter();
+    public DaoAuthenticationProvider daoAuthenticationProvider() {
+        DaoAuthenticationProvider daoAuthenticationProvider = new DaoAuthenticationProvider();
+        daoAuthenticationProvider.setPasswordEncoder(passwordEncoder());
+        daoAuthenticationProvider.setUserDetailsService((UserDetailsService) userService);
+        return daoAuthenticationProvider;
     }
 }

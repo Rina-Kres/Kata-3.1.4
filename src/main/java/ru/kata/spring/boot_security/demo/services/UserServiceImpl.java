@@ -2,107 +2,129 @@ package ru.kata.spring.boot_security.demo.services;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.ModelAttribute;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestParam;
 import ru.kata.spring.boot_security.demo.models.Role;
 import ru.kata.spring.boot_security.demo.models.User;
+import ru.kata.spring.boot_security.demo.repositories.RoleRepository;
 import ru.kata.spring.boot_security.demo.repositories.UserRepository;
 
+import java.security.Principal;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+
 @Service
-@Transactional(readOnly = true)
-public class UserServiceImpl implements UserService, UserDetailsService {
+@Transactional
+public class UserServiceImpl implements UserDetailsService, UserService {
 
+    private final RoleRepository roleRepository;
     private final UserRepository userRepository;
-    private final BCryptPasswordEncoder passwordEncoder;
+    private final PasswordEncoder passwordEncoder;
 
-    public UserServiceImpl(UserRepository userRepository, BCryptPasswordEncoder passwordEncoder) {
+    @Autowired
+    public UserServiceImpl(UserRepository userRepository,
+                           @Lazy PasswordEncoder passwordEncoder,
+                           RoleRepository roleRepository) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.roleRepository = roleRepository;
+    }
+
+
+    @Override
+    public User findByUsername(String username) {
+        return userRepository.findByUsername(username).orElse(null);
     }
 
     @Override
-    @Transactional
-    public User add(User user) {
-        if (user.getPassword() == null || user.getPassword().isEmpty()) {
-            throw new IllegalArgumentException("Password cannot be null or empty");
+    public List<User> getAllUsers() {
+        return null;
+    }
+
+    @Override
+    public User getUserById(Long id) {
+        return null;
+    }
+
+    @Override
+    public User oneUser(Principal principal) {
+        return null;
+    }
+
+    @Override
+    public boolean createUser(User user) {
+        if (userRepository.findByEmail(user.getEmail()).isPresent()) {
+            return false;
         }
-        String encodedPassword = passwordEncoder.encode(user.getPassword());
-        user.setPassword(encodedPassword);
 
-        return userRepository.save(user);
+        user.setPassword(passwordEncoder.encode(user.getPassword()));
+        setUserRoles(user);
+        userRepository.save(user);
+        return true;
     }
-    @Override
-    @Transactional
-    public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
-        Optional <User> userOptional =  userRepository.findUserAndFetchRoles(email);
-        if (userOptional.isPresent()) {
-            User user = userOptional.get();
-            // Убедитесь, что роли загружены
-            Set<Role> roles = user.getRoles();
-            if (roles == null || roles.isEmpty()) {
-                throw new UsernameNotFoundException("User roles not found for email: " + email);
-            }
-            return user;
-        } else {
-            throw new UsernameNotFoundException("User not found for email: " + email);
-        }
-    }
-    @Override
-    @Transactional
-    public boolean update(User user) {
 
+    @Override
+    public boolean editUser(User user) {
         return userRepository.findById(user.getId())
-                .map(entity -> {
-                    entity.setEmail(user.getEmail());
-                    entity.setFirstName(user.getFirstName());
-                    entity.setLastName(user.getLastName());
-                    entity.setAge(user.getAge());
-                    if (user.getPassword() != null) {
-                        entity.setPassword(user.getPassword());
+                .map(existingUser -> {
+                    userRepository.findByEmail(user.getEmail())
+                            .ifPresent(userWithSameEmail -> {
+                                Long existingId = existingUser.getId();
+                                Long newId = user.getId();
+                                if (existingId != null && newId != null && !existingId.equals(newId)) {
+                                    throw new IllegalArgumentException("Email already in use");
+                                }
+                            });
+
+                    existingUser.setUsername(user.getUsername());
+                    existingUser.setLastName(user.getLastName());
+                    existingUser.setAge(user.getAge());
+                    existingUser.setEmail(user.getEmail());
+
+                    if (user.getPassword() != null && !user.getPassword().isEmpty()) {
+                        existingUser.setPassword(passwordEncoder.encode(user.getPassword()));
                     }
-                    entity.setRoles(user.getRoles());
+
+                    setUserRoles(user);
+                    userRepository.save(existingUser);
                     return true;
                 })
                 .orElse(false);
     }
 
     @Override
-    @Transactional
-    public boolean removeById(Long id) {
-        return userRepository.findById(id)
-                .map(user -> {
-                    userRepository.delete(user);
-                    return true;
-                })
-                .orElse(false);
+    public boolean deleteUser(Long id) {
+        return false;
     }
 
     @Override
-    public List<User> findAll() {
-        return userRepository.findAll();
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+        return userRepository.findByUsername(username)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
     }
 
     @Override
-    public Optional<User> findById(Long id) {
-        return userRepository.findById(id);
+    public Collection<? extends GrantedAuthority> getAuthorities(Collection<Role> roles) {
+        return null;
     }
 
-    public Optional<User> findUserAndFetchRoles(String email){
-        return userRepository.findUserAndFetchRoles(email);
+    private void setUserRoles(User user) {
+        Set<Role> managedRoles = new HashSet<>();
+        for (Role role : user.getRoles()) {
+            roleRepository.findById(role.getId())
+                    .ifPresent(managedRoles::add);
+        }
+        user.setRoles(managedRoles);
     }
 }
