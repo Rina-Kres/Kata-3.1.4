@@ -55,7 +55,11 @@ public class UserServiceImpl implements UserDetailsService, UserService {
 
     @Override
     public User oneUser(Principal principal) {
-        return null;
+        if (principal == null) {
+            return null;
+        }
+        String email = principal.getName();
+        return userRepository.findByEmail(email).orElse(null);
     }
 
     @Override

@@ -1,6 +1,7 @@
 package ru.kata.spring.boot_security.demo.controllers;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -22,10 +23,10 @@ public class UserControllerRest {
     }
 
     @GetMapping("/user")
-    public ResponseEntity<User> getUser(Principal principal) {
+    public ResponseEntity<User> getCurrentUser(Principal principal) {
         User user = userService.oneUser(principal);
         return user != null
                 ? ResponseEntity.ok(user)
-                : ResponseEntity.notFound().build();
+                : ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
     }
 }

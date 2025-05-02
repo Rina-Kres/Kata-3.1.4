@@ -2,6 +2,7 @@ package ru.kata.spring.boot_security.demo.services;
 
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -12,8 +13,7 @@ import java.security.Principal;
 import java.util.Collection;
 import java.util.List;
 
-public interface UserService {
-
+public interface UserService extends UserDetailsService {
     User findByUsername(String username);
 
     List<User> getAllUsers();
