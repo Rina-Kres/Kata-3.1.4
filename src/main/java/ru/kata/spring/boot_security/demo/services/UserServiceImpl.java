@@ -2,7 +2,6 @@ package ru.kata.spring.boot_security.demo.services;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -17,19 +16,14 @@ import ru.kata.spring.boot_security.demo.repositories.RoleRepository;
 import ru.kata.spring.boot_security.demo.repositories.UserRepository;
 
 import java.security.Principal;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
-@Transactional
 public class UserServiceImpl implements UserDetailsService, UserService {
 
-    private final RoleRepository roleRepository;
     private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Autowired
@@ -41,20 +35,22 @@ public class UserServiceImpl implements UserDetailsService, UserService {
         this.roleRepository = roleRepository;
     }
 
-
     @Override
+    @Transactional(readOnly = true)
     public User findByUsername(String username) {
         return userRepository.findByUsername(username).orElse(null);
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<User> getAllUsers() {
-        return null;
+        return userRepository.findAll();
     }
 
     @Override
+    @Transactional(readOnly = true)
     public User getUserById(Long id) {
-        return null;
+        return userRepository.findById(id).orElse(null);
     }
 
     @Override
@@ -63,11 +59,11 @@ public class UserServiceImpl implements UserDetailsService, UserService {
     }
 
     @Override
+    @Transactional
     public boolean createUser(User user) {
         if (userRepository.findByEmail(user.getEmail()).isPresent()) {
             return false;
         }
-
         user.setPassword(passwordEncoder.encode(user.getPassword()));
         setUserRoles(user);
         userRepository.save(user);
@@ -75,14 +71,13 @@ public class UserServiceImpl implements UserDetailsService, UserService {
     }
 
     @Override
+    @Transactional
     public boolean editUser(User user) {
         return userRepository.findById(user.getId())
                 .map(existingUser -> {
                     userRepository.findByEmail(user.getEmail())
-                            .ifPresent(userWithSameEmail -> {
-                                Long existingId = existingUser.getId();
-                                Long newId = user.getId();
-                                if (existingId != null && newId != null && !existingId.equals(newId)) {
+                            .ifPresent(foundUser -> {
+                                if (!Objects.equals(foundUser.getId(), user.getId())) {
                                     throw new IllegalArgumentException("Email already in use");
                                 }
                             });
@@ -92,39 +87,54 @@ public class UserServiceImpl implements UserDetailsService, UserService {
                     existingUser.setAge(user.getAge());
                     existingUser.setEmail(user.getEmail());
 
-                    if (user.getPassword() != null && !user.getPassword().isEmpty()) {
+                    if (!user.getPassword().isEmpty()) {
                         existingUser.setPassword(passwordEncoder.encode(user.getPassword()));
                     }
 
                     setUserRoles(user);
-                    userRepository.save(existingUser);
                     return true;
                 })
                 .orElse(false);
     }
 
     @Override
+    @Transactional
     public boolean deleteUser(Long id) {
+        if (userRepository.existsById(id)) {
+            userRepository.deleteById(id);
+            return true;
+        }
         return false;
     }
 
     @Override
-    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
+    @Transactional(readOnly = true)
+    public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + email));
+
+        return new org.springframework.security.core.userdetails.User(
+                user.getEmail(),
+                user.getPassword(),
+                getAuthorities(user.getRoles())
+        );
     }
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities(Collection<Role> roles) {
-        return null;
+        return roles.stream()
+                .map(role -> new SimpleGrantedAuthority(role.getRoleName()))
+                .collect(Collectors.toList());
     }
 
-    private void setUserRoles(User user) {
-        Set<Role> managedRoles = new HashSet<>();
-        for (Role role : user.getRoles()) {
-            roleRepository.findById(role.getId())
-                    .ifPresent(managedRoles::add);
-        }
+    @Transactional
+    public void setUserRoles(User user) {
+        Set<Role> managedRoles = user.getRoles().stream()
+                .map(role -> roleRepository.findById(role.getId()))
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .collect(Collectors.toSet());
+
         user.setRoles(managedRoles);
     }
 }
